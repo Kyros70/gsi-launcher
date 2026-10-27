@@ -1,0 +1,123 @@
+name: gsi-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom:
+        description: rom to sync and build
+        type: choice
+        options:
+          - lineage
+          - pixelos
+          - infinity
+        default: lineage
+      target:
+        description: lunch target
+        default: treble_arm64_bvN
+      release:
+        description: build release
+        default: cp2a
+      variant:
+        description: build variant
+        default: userdebug
+      generate_args:
+        description: arguments for device/phh/treble/generate.sh (empty uses the rom default)
+        default: ""
+      volume:
+        description: persistent volume name, use a new name for a fresh empty disk
+        default: build-gsi
+      jobs:
+        description: parallel jobs for sync and build
+        type: choice
+        options:
+          - "8"
+          - "12"
+          - "16"
+          - "24"
+          - "32"
+        default: "32"
+
+concurrency:
+  group: gsi-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      ROM: ${{ inputs.rom }}
+      JOBS: ${{ inputs.jobs }}
+      VOLUME: ${{ inputs.volume }}
+      TARGET: ${{ inputs.target }}
+      RELEASE: ${{ inputs.release }}
+      VARIANT: ${{ inputs.variant }}
+      GEN_ARGS: ${{ inputs.generate_args }}
+    steps:
+      - name: checkout scripts
+        uses: actions/checkout@v4
+        with:
+          repository: Kyros70/gsi-patches
+          ref: lineage-fixed
+          token: ${{ secrets.PAT }}
+          path: gsi-patches
+
+      - name: checkout patches branch
+        uses: actions/checkout@v4
+        with:
+          repository: Kyros70/gsi-patches
+          ref: ${{ inputs.rom }}-fixed
+          token: ${{ secrets.PAT }}
+          path: patches-branch
+
+      - name: checkout signing keys
+        uses: actions/checkout@v4
+        with:
+          repository: Kyros70/gsi-keys
+          token: ${{ secrets.PAT }}
+          path: gsi-keys
+
+      - uses: namespacelabs/nscloud-setup@v0
+
+      - name: create build instance
+        run: |
+          nsc create --machine_type 32x64 --region us --volume "persistent:${VOLUME}:/work:700GB" --duration 3h --label purpose=gsi-build --cidfile "$RUNNER_TEMP/instance_id"
+          echo "START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: send scripts, patches and keys to the instance
+        run: |
+          ID=$(cat "$RUNNER_TEMP/instance_id")
+          mkdir stage
+          cp -a gsi-patches/. stage/
+          cp -a patches-branch gsi-keys stage/
+          tar czf - --exclude=.git -C stage . | nsc docker remote "$ID" -- run --rm -i -v /work:/work ubuntu:24.04 bash -c 'rm -rf /work/ci && mkdir -p /work/ci && tar xzf - -C /work/ci'
+
+      - name: sync, patch and build
+        run: |
+          ID=$(cat "$RUNNER_TEMP/instance_id")
+          nsc docker remote "$ID" -- run --rm --privileged --ulimit nofile=65536:65536 -v /work:/work -e "ROM=$ROM" -e "JOBS=$JOBS" -e "TARGET=$TARGET" -e "RELEASE=$RELEASE" -e "VARIANT=$VARIANT" -e "GEN_ARGS=$GEN_ARGS" -e "START=$START" ubuntu:24.04 bash /work/ci/scripts/remote-build.sh
+
+      - name: fetch system image
+        run: |
+          ID=$(cat "$RUNNER_TEMP/instance_id")
+          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 cat /work/artifacts/system.img.xz > "$RUNNER_TEMP/system.img.xz"
+          ls -lh "$RUNNER_TEMP/system.img.xz"
+
+      - name: upload system image
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.rom }}-system-img
+          path: ${{ runner.temp }}/system.img.xz
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: destroy build instance
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/instance_id" ] || exit 0
+          ID=$(cat "$RUNNER_TEMP/instance_id")
+          nsc docker remote "$ID" -- run --rm --privileged -v /work:/work ubuntu:24.04 sh -c 'swapoff /work/swapfile; sync' || true
+          nsc destroy --force "$ID" || true
