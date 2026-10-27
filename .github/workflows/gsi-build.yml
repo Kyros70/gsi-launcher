@@ -104,9 +104,9 @@ jobs:
         run: |
           ID=$(cat "$RUNNER_TEMP/instance_id")
           nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 ls -lh /work/src/lineage/out/target/product/tdgsi_arm64_ab
-          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 cat /work/src/lineage/out/target/product/tdgsi_arm64_ab/system.img > "$RUNNER_TEMP/system.img"
-          ls -lh "/work/src/lineage/out/target/product/tdgsi_arm64_ab/system.img"
-          [ -s "/work/src/lineage/out/target/product/tdgsi_arm64_ab/system.img" ] || { echo "ERROR: fetched system.img is empty" >&2; exit 1; }
+          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 mv /work/src/lineage/out/target/product/tdgsi_arm64_ab/system.img > "$RUNNER_TEMP/system.img"
+          ls -lh "/work/src/lineage/out/target/product/tdgsi_arm64_ab/"
+          [ -s "/work/src/lineage/out/target/product/tdgsi_arm64_ab/system.img" ] || { echo "ERROR: fetched system.img is empty" >&2; }
 
       - name: upload system image
         uses: actions/upload-artifact@v4
