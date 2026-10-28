@@ -109,17 +109,19 @@ jobs:
       - name: fetch system image
         run: |
           ID=$(cat "$RUNNER_TEMP/instance_id")
-          IMG="/work/src/${ROM}/out/target/product/tdgsi_arm64_ab/system.img"
-          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 ls -lh "$IMG"
-          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 cat "$IMG" > "$RUNNER_TEMP/system.img"
-          ls -lh "$RUNNER_TEMP/system.img"
-          [ -s "$RUNNER_TEMP/system.img" ] || { echo "ERROR: fetched system.img is empty" >&2; exit 1; }
+          NAME=$(nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 cat /work/artifacts/NAME | tr -d '\r\n')
+          [ -n "$NAME" ] || { echo "ERROR: could not read the image name" >&2; exit 1; }
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 ls -lh "/work/artifacts/$NAME"
+          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 cat "/work/artifacts/$NAME" > "$RUNNER_TEMP/$NAME"
+          ls -lh "$RUNNER_TEMP/$NAME"
+          [ -s "$RUNNER_TEMP/$NAME" ] || { echo "ERROR: fetched $NAME is empty" >&2; exit 1; }
 
       - name: upload system image
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.rom }}-system-img
-          path: ${{ runner.temp }}/system.img
+          name: ${{ env.NAME }}
+          path: ${{ runner.temp }}/${{ env.NAME }}
           compression-level: 0
           if-no-files-found: error
 

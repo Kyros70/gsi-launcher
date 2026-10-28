@@ -95,6 +95,20 @@ if [ "$rc" = 124 ] || [ "$rc" = 130 ] || [ "$rc" = 137 ]; then
 fi
 [ "$rc" = 0 ] || exit "$rc"
 
-img="$SRC_DIR/out/target/product/tdgsi_arm64_ab/system.img"
-ls -lh "$img"
-[ -s "$img" ] || { echo "ERROR: $img is missing or empty" >&2; exit 1; }
+outdir="$SRC_DIR/out/target/product/tdgsi_arm64_ab"
+[ -s "$outdir/system.img" ] || { echo "ERROR: $outdir/system.img is missing or empty" >&2; exit 1; }
+
+day=$(date +%Y%m%d)
+case "$ROM" in
+    infinity) name="InfinityX-4.1-UNOFFICIAL-${day}-GSI-arm64_ab.img.xz" ;;
+    pixelos)  name="PixelOS-UNOFFICIAL-${day}-GSI-arm64_ab.img.xz" ;;
+    *)        name="LineageOS-24.0-UNOFFICIAL-${day}-GSI-arm64_ab.img.xz" ;;
+esac
+
+rm -rf /work/artifacts
+mkdir -p /work/artifacts
+echo "$name" > /work/artifacts/NAME
+cd "$outdir"
+xz -9e -T0 -k -v -f -c system.img > "/work/artifacts/$name"
+ls -lh system.img "/work/artifacts/$name"
+[ -s "/work/artifacts/$name" ] || { echo "ERROR: $name is empty" >&2; exit 1; }
