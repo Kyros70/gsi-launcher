@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${ROM:?}" "${JOBS:?}" "${TARGET:?}" "${RELEASE:?}" "${VARIANT:?}" "${START:?}"
+GEN_ARGS="${GEN_ARGS:-}"
+
+LIMIT=$((160 * 60))
+ci=/work/ci
+export JOBS
+export SRC_DIR="/work/src/${ROM}"
+
+SUDO=""
+[ "$(id -u)" = 0 ] || SUDO="sudo"
+
+left() { echo $((LIMIT - ($(date +%s) - START))); }
+
+if ! command -v apt-get >/dev/null 2>&1; then
+    echo "ERROR: this instance has no apt-get, an Ubuntu/Debian image is needed for the android build" >&2
+    exit 2
+fi
+
+swap_gb=74
+swap_bytes=$((swap_gb * 1024 * 1024 * 1024))
+if [ -f /work/swapfile ] && [ "$(stat -c %s /work/swapfile)" != "$swap_bytes" ]; then
+    $SUDO swapoff /work/swapfile || true
+    $SUDO rm -f /work/swapfile
+fi
+if [ ! -f /work/swapfile ]; then
+    $SUDO fallocate -l "${swap_gb}G" /work/swapfile
+    $SUDO chmod 600 /work/swapfile
+    $SUDO mkswap /work/swapfile
+fi
+$SUDO swapon /work/swapfile || true
+trap "$SUDO swapoff /work/swapfile 2>/dev/null || true; sync" EXIT
+
+export DEBIAN_FRONTEND=noninteractive
+$SUDO apt-get update
+$SUDO apt-get install -y git-core git-lfs gnupg flex bison build-essential zip curl zlib1g-dev libc6-dev-i386 x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 rsync bc libssl-dev xz-utils openjdk-17-jdk-headless ca-certificates util-linux
+
+$SUDO curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+$SUDO chmod +x /usr/local/bin/repo
+git config --global user.name "gsi-patches"
+git config --global user.email "gsi-patches@localhost"
+git config --global color.ui false
+git lfs install --skip-repo
+
+if [ -d "${SRC_DIR}/.repo" ]; then
+    rm -rf "$SRC_DIR"/external/chromium-webview/prebuilt/{arm,arm64,x86,x86_64}
+    (cd "$SRC_DIR" && repo forall --ignore-missing -j"$JOBS" -c 'git reset -q --hard && git clean -fdq')
+fi
+
+bash "$ci/scripts/sync-sources.sh" "$(case "$ROM" in infinity) echo 1 ;; pixelos) echo 2 ;; lineage) echo 3 ;; esac)"
+
+for a in arm arm64 x86 x86_64; do
+    d="$SRC_DIR/external/chromium-webview/prebuilt/$a"
+    git -C "$d" config --unset-all filter.lfs.smudge || true
+    git -C "$d" config --unset-all filter.lfs.process || true
+    git -C "$d" lfs pull
+    head -c 2 "$d/webview.apk" | grep -q PK || { echo "ERROR: $d/webview.apk is not a real apk, git-lfs pull failed" >&2; exit 1; }
+done
+
+SKIP_MISSING=1 KEEP_GOING=1 "$ci/patches-branch/apply-series.sh" "$SRC_DIR"
+
+keypriv=lineage-priv
+[ "$ROM" = infinity ] && keypriv=infinity-priv
+mkdir -p "$SRC_DIR/vendor/$keypriv/keys"
+cp "$ci"/gsi-keys/keys/* "$SRC_DIR/vendor/$keypriv/keys/"
+sed -i "s#vendor/lineage-priv#vendor/$keypriv#g" "$SRC_DIR/vendor/$keypriv/keys/keys.mk"
+cp "$ci/gsi-keys/keys/platform.pk8" "$ci/gsi-keys/keys/platform.x509.pem" "$SRC_DIR/treble_app/keys/"
+
+(cd "$SRC_DIR/treble_app" && bash build.sh release)
+
+if [ -z "$GEN_ARGS" ] && [ "$ROM" = lineage ]; then
+    GEN_ARGS=lineage
+fi
+(cd "$SRC_DIR/device/phh/treble" && bash generate.sh $GEN_ARGS)
+
+remaining=$(left)
+if [ "$remaining" -le 300 ]; then
+    echo "time limit reached before the build could start, rerun to resume" >&2
+    exit 124
+fi
+
+echo "build deadline in ${remaining}s"
+cd "$SRC_DIR"
+REPO_TRACE=0 python3 .repo/repo/repo manifest -o - -r > /dev/null
+set +e
+timeout -s INT -k 120 "${remaining}s" bash -c "source build/envsetup.sh && lunch ${TARGET}-${RELEASE}-${VARIANT} && m -j${JOBS} systemimage"
+rc=$?
+set -e
+
+if [ "$rc" = 124 ] || [ "$rc" = 130 ] || [ "$rc" = 137 ]; then
+    echo "stopped at the 2h40m limit, out/ is kept on /work so a rerun resumes where this stopped" >&2
+    exit 124
+fi
+[ "$rc" = 0 ] || exit "$rc"
+
+img=$(ls -t "$SRC_DIR"/out/target/product/*/system.img | head -1)
+rm -rf /work/artifacts
+mkdir -p /work/artifacts
+echo "compressing $img"
+xz -9e -T0 -c "$img" > /work/artifacts/system.img.xz
+ls -lh "$img" /work/artifacts/system.img.xz
+[ -s /work/artifacts/system.img.xz ] || { echo "ERROR: system.img.xz is empty" >&2; exit 1; }
