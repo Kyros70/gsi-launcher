@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'rc=$?; echo "::error::remote-build.sh stopped at line $LINENO: $BASH_COMMAND (exit $rc) | $(df -h /work 2>/dev/null | tail -1)"' ERR
 
 : "${ROM:?}" "${JOBS:?}" "${TARGET:?}" "${RELEASE:?}" "${VARIANT:?}" "${START:?}"
 GEN_ARGS="${GEN_ARGS:-}"
@@ -19,6 +20,9 @@ if ! command -v apt-get >/dev/null 2>&1; then
     exit 2
 fi
 
+echo "==> disk"
+df -h /work
+(mount | grep " /work ") || echo "WARNING: /work is not its own mount, the persistent volume may not be attached here"
 swap_gb=74
 swap_bytes=$((swap_gb * 1024 * 1024 * 1024))
 if [ -f /work/swapfile ] && [ "$(stat -c %s /work/swapfile)" != "$swap_bytes" ]; then
