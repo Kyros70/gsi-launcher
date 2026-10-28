@@ -52,7 +52,7 @@ git lfs install --skip-repo
 if [ -d "${SRC_DIR}/.repo" ]; then
     echo "==> resetting the existing tree in ${SRC_DIR}"
     rm -rf "$SRC_DIR"/external/chromium-webview/prebuilt/{arm,arm64,x86,x86_64}
-    (cd "$SRC_DIR" && repo forall --ignore-missing -j"$JOBS" -c 'git reset --hard -q || echo "reset failed in $REPO_PATH"; git clean -fdq || echo "clean failed in $REPO_PATH"') || echo "WARNING: repo forall exited non-zero, continuing so the sync can repair the tree"
+    (cd "$SRC_DIR" && repo forall --ignore-missing -j"$JOBS" -c 'git reset --hard -q "$REPO_LREV" || echo "reset failed in $REPO_PATH"; git clean -fdq || echo "clean failed in $REPO_PATH"') || echo "WARNING: repo forall exited non-zero, continuing so the sync can repair the tree"
 else
     echo "==> no existing tree in ${SRC_DIR}, fresh sync"
 fi
