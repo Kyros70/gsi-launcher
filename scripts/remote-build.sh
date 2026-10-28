@@ -95,10 +95,6 @@ if [ "$rc" = 124 ] || [ "$rc" = 130 ] || [ "$rc" = 137 ]; then
 fi
 [ "$rc" = 0 ] || exit "$rc"
 
-img=$(ls -t "$SRC_DIR"/out/target/product/*/system.img | head -1)
-rm -rf /work/artifacts
-mkdir -p /work/artifacts
-echo "compressing $img"
-xz -9e -T0 -c "$img" > /work/artifacts/system.img.xz
-ls -lh "$img" /work/artifacts/system.img.xz
-[ -s /work/artifacts/system.img.xz ] || { echo "ERROR: system.img.xz is empty" >&2; exit 1; }
+img="$SRC_DIR/out/target/product/tdgsi_arm64_ab/system.img"
+ls -lh "$img"
+[ -s "$img" ] || { echo "ERROR: $img is missing or empty" >&2; exit 1; }

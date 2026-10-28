@@ -109,16 +109,17 @@ jobs:
       - name: fetch system image
         run: |
           ID=$(cat "$RUNNER_TEMP/instance_id")
-          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 ls -lh /work/artifacts
-          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 cat /work/artifacts/system.img.xz > "$RUNNER_TEMP/system.img.xz"
-          ls -lh "$RUNNER_TEMP/system.img.xz"
-          [ -s "$RUNNER_TEMP/system.img.xz" ] || { echo "ERROR: fetched system.img.xz is empty" >&2; exit 1; }
+          IMG="/work/src/${ROM}/out/target/product/tdgsi_arm64_ab/system.img"
+          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 ls -lh "$IMG"
+          nsc docker remote "$ID" -- run --rm -v /work:/work:ro ubuntu:24.04 cat "$IMG" > "$RUNNER_TEMP/system.img"
+          ls -lh "$RUNNER_TEMP/system.img"
+          [ -s "$RUNNER_TEMP/system.img" ] || { echo "ERROR: fetched system.img is empty" >&2; exit 1; }
 
       - name: upload system image
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.rom }}-system-img
-          path: ${{ runner.temp }}/system.img.xz
+          path: ${{ runner.temp }}/system.img
           compression-level: 0
           if-no-files-found: error
 
