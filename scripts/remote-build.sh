@@ -33,6 +33,7 @@ fi
 $SUDO swapon /work/swapfile || true
 trap "$SUDO swapoff /work/swapfile 2>/dev/null || true; sync" EXIT
 
+echo "==> installing packages"
 export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update
 $SUDO apt-get install -y git-core git-lfs gnupg flex bison build-essential zip curl zlib1g-dev libc6-dev-i386 x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 rsync bc libssl-dev xz-utils openjdk-17-jdk-headless ca-certificates util-linux
@@ -45,12 +46,17 @@ git config --global color.ui false
 git lfs install --skip-repo
 
 if [ -d "${SRC_DIR}/.repo" ]; then
+    echo "==> resetting the existing tree in ${SRC_DIR}"
     rm -rf "$SRC_DIR"/external/chromium-webview/prebuilt/{arm,arm64,x86,x86_64}
-    (cd "$SRC_DIR" && repo forall --ignore-missing -j"$JOBS" -c 'git reset -q --hard && git clean -fdq')
+    (cd "$SRC_DIR" && repo forall --ignore-missing -j"$JOBS" -c 'git reset --hard -q || echo "reset failed in $REPO_PATH"; git clean -fdq || echo "clean failed in $REPO_PATH"') || echo "WARNING: repo forall exited non-zero, continuing so the sync can repair the tree"
+else
+    echo "==> no existing tree in ${SRC_DIR}, fresh sync"
 fi
 
+echo "==> syncing sources"
 bash "$ci/scripts/sync-sources.sh" "$(case "$ROM" in infinity) echo 1 ;; pixelos) echo 2 ;; lineage) echo 3 ;; esac)"
 
+echo "==> pulling chromium-webview lfs prebuilts"
 for a in arm arm64 x86 x86_64; do
     d="$SRC_DIR/external/chromium-webview/prebuilt/$a"
     git -C "$d" config --unset-all filter.lfs.smudge || true
@@ -59,8 +65,10 @@ for a in arm arm64 x86 x86_64; do
     head -c 2 "$d/webview.apk" | grep -q PK || { echo "ERROR: $d/webview.apk is not a real apk, git-lfs pull failed" >&2; exit 1; }
 done
 
+echo "==> applying patches"
 SKIP_MISSING=1 KEEP_GOING=1 "$ci/patches-branch/apply-series.sh" "$SRC_DIR"
 
+echo "==> installing signing keys"
 keypriv=lineage-priv
 [ "$ROM" = infinity ] && keypriv=infinity-priv
 mkdir -p "$SRC_DIR/vendor/$keypriv/keys"
@@ -68,11 +76,13 @@ cp "$ci"/gsi-keys/keys/* "$SRC_DIR/vendor/$keypriv/keys/"
 sed -i "s#vendor/lineage-priv#vendor/$keypriv#g" "$SRC_DIR/vendor/$keypriv/keys/keys.mk"
 cp "$ci/gsi-keys/keys/platform.pk8" "$ci/gsi-keys/keys/platform.x509.pem" "$SRC_DIR/treble_app/keys/"
 
+echo "==> building treble_app"
 (cd "$SRC_DIR/treble_app" && bash build.sh release)
 
 if [ -z "$GEN_ARGS" ] && [ "$ROM" = lineage ]; then
     GEN_ARGS=lineage
 fi
+echo "==> generating treble makefiles"
 (cd "$SRC_DIR/device/phh/treble" && bash generate.sh $GEN_ARGS)
 
 remaining=$(left)
@@ -81,7 +91,7 @@ if [ "$remaining" -le 300 ]; then
     exit 124
 fi
 
-echo "build deadline in ${remaining}s"
+echo "==> starting the build, deadline in ${remaining}s"
 cd "$SRC_DIR"
 REPO_TRACE=0 python3 .repo/repo/repo manifest -o - -r > /dev/null
 set +e
