@@ -57,6 +57,11 @@ else
     echo "==> no existing tree in ${SRC_DIR}, fresh sync"
 fi
 
+(
+    while sleep 60; do
+        echo "[mon] $(date +%T) $(free -m | awk '/^Mem/{printf "mem_used=%sMB avail=%sMB ",$3,$7} /^Swap/{printf "swap_used=%sMB ",$3}')$(df -h /work | awk 'NR==2{printf "disk_avail=%s ",$4}')load=$(cut -d' ' -f1 /proc/loadavg)"
+    done
+) &
 echo "==> syncing sources"
 bash "$ci/scripts/sync-sources.sh" "$(case "$ROM" in infinity) echo 1 ;; pixelos) echo 2 ;; lineage) echo 3 ;; esac)"
 
