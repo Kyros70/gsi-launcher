@@ -103,6 +103,7 @@ fi
 echo "==> starting the build, deadline in ${remaining}s"
 cd "$SRC_DIR"
 REPO_TRACE=0 python3 .repo/repo/repo manifest -o - -r > /dev/null
+if [ "$ROM" = infinity ]; then export DISABLE_DEXPREOPT_CHECK=true; fi
 set +e
 timeout -s INT -k 120 "${remaining}s" bash -c "source build/envsetup.sh && lunch ${TARGET}-${RELEASE}-${VARIANT} && m -j${JOBS} systemimage"
 rc=$?
