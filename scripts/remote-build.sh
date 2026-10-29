@@ -40,7 +40,7 @@ trap "$SUDO swapoff /work/swapfile 2>/dev/null || true; sync" EXIT
 echo "==> installing packages"
 export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update
-$SUDO apt-get install -y git-core git-lfs gnupg flex bison build-essential zip curl zlib1g-dev libc6-dev-i386 x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 rsync bc libssl-dev xz-utils openjdk-17-jdk-headless ca-certificates util-linux
+$SUDO apt-get install -y git-core git-lfs gnupg flex bison build-essential zip curl zlib1g-dev libc6-dev-i386 x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 rsync bc libssl-dev xz-utils openjdk-17-jdk-headless ca-certificates util-linux ccache
 
 $SUDO curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
 $SUDO chmod +x /usr/local/bin/repo
